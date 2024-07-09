@@ -36,7 +36,7 @@ Runtime changes to the configuration of zpools are automatically recognized. In 
  ### Command line parameters
 The usage of the zolspinup command is:
 ```
-zolspinup [-h] [-d DELAY] [-l LOGLEVEL] [-n]
+zolspinup [-h] [-d DELAY] [-l LOGLEVEL] [-n] [-r]
 
 options:
   -h, --help            show this help message and exit
