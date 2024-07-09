@@ -1,0 +1,12 @@
+[Unit]
+Description=Spinup sleeping zpool disks in parallel
+Requires=zfs.target
+After=zfs.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/sbin/zolspinup
+ExecReload=kill -SIGHUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
