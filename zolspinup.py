@@ -66,6 +66,33 @@ was chosen because it is large enough to safely assume that it covers all disks
 that were already resumed while the Python process performs its actions and
 small enough to exclude, and thus identify, an intermediate suspension of the
 zpool.
+
+NOTE:
+To resume the disks, a side effect of opening a device in read-write or
+write-only mode is used. It is in fact the call to close the file descriptor
+that wakes up the disk. Opening the device in read-only mode does not have this
+side effect.
+From the Linux standard C library 'open(2)' manpage:
+
+   File access mode
+       Unlike the other values that can be specified in flags, the access mode
+       values O_RDONLY,  O_WRONLY,  and  O_RDWR  do  not specify  individual
+       bits.  Rather, they define the low order two bits of flags, and are
+       defined respectively as 0, 1, and 2.  In other words, the combination
+       O_RDONLY | O_WRONLY is a logical error, and certainly does not have the
+       same  meaning as O_RDWR.
+
+       Linux  reserves  the special, nonstandard access mode 3 (binary 11) in
+       flags to mean: check for read and write permission on the file and return
+       a file descriptor that can't be used for reading or writing.  This
+       nonstandard access mode is used by some Linux drivers to return a file
+       descriptor that is to be used only for device-specific ioctl(2)
+       operations.
+
+The mentioned access mode combination of 'O_WRONLY | O_RDWR' (binary 11) could
+be used to avoid the side effect and send ioctl commands to the device without
+waking it up. However, since the intention is to resume the disk, we make use of
+the side effect and avoid the hassle to issue a 'START STOP UNIT' ioctl.
 """
 
 
@@ -558,7 +585,8 @@ class ZpoolRpmManager(metaclass=Singleton):
                                 c_ulonglong(disk.ino)
                             ] = c_ulonglong(ts)
                             try:
-                                # Simply opening the device will resume it.
+                                # See the NOTE in the opening comment regarding
+                                # the mechanism used to resume a disk.
                                 fd = os.open("/dev/" + disk.blk_dev,
                                              os.O_NONBLOCK | os.O_RDWR)
                                 os.close(fd)
