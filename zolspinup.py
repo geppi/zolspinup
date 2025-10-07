@@ -130,6 +130,18 @@ _log_spnrpt =logging.getLogger('spinreport')
 _log_spnrpt.addHandler(logging.NullHandler())
 
 
+def is_module_loaded(name: str) -> bool:
+    try:
+        with open('/proc/modules') as f:
+            for line in f:
+                # e.g. "sd_mod 90112 0 - Live 0x0000000000000000"
+                if line.startswith(f'{name} '):
+                    return True
+        return False
+    except IOError:
+        return False
+
+
 class SdDisk():
     def __init__(self, blk_dev: str, pool: str, legacy_spin_ctrl=False) -> None:
         if not blk_dev.startswith("sd"):
@@ -374,11 +386,17 @@ class ZpoolRpmManager(metaclass=Singleton):
             )
             self.__legacy_spin_ctrl = True
         self.__last_config_update = self.__get_zpool_config()
+        self.__is_sd_mod_module = is_module_loaded("sd_mod")
         self.__config_rpm()
         self.__get_rpm_config()
         self.__eBee = None
 
     def __get_eBPF_suspend_monitor(self) -> str:
+        probe_proto = "KFUNC_PROBE(sd_suspend_runtime, struct device *dev)"
+        if self.__is_sd_mod_module:
+            probe_proto = "MODULE_KFUNC_PROBE(sd_mod, sd_suspend_runtime, struct device *dev)"
+
+        # Don't use f-strings or similar to avoid escaping in the template
         return """
         BPF_RINGBUF_OUTPUT(suspend_probe, 1);
 
@@ -386,7 +404,7 @@ class ZpoolRpmManager(metaclass=Singleton):
             u64 ino;
         };
 
-        KFUNC_PROBE(sd_suspend_runtime, struct device *dev)
+        PROBE_PROTO
         {
             u64 ino = dev->kobj.sd->id;
 
@@ -399,9 +417,14 @@ class ZpoolRpmManager(metaclass=Singleton):
             suspend_probe.ringbuf_submit(dev_info, BPF_RB_FORCE_WAKEUP);
             return 0;
         }
-        """
+        """.replace("PROBE_PROTO", probe_proto)
 
     def __get_eBPF_resume_monitor(self) -> str:
+        probe_proto = "KFUNC_PROBE(sd_resume_runtime, struct device *dev)"
+        if self.__is_sd_mod_module:
+            probe_proto = "MODULE_KFUNC_PROBE(sd_mod, sd_resume_runtime, struct device *dev)"
+
+        # Don't use f-strings or similar to avoid escaping in the template
         return """
         #include <linux/device.h>
         #include <linux/kobject.h>
@@ -415,7 +438,7 @@ class ZpoolRpmManager(metaclass=Singleton):
             u64 ts;
         };
 
-        KFUNC_PROBE(sd_resume_runtime, struct device *dev)
+        PROBE_PROTO
         {
             u64 *do_skip;
             u64 delta;
@@ -440,7 +463,7 @@ class ZpoolRpmManager(metaclass=Singleton):
             resume_probe.ringbuf_submit(dev_info, BPF_RB_FORCE_WAKEUP);
             return 0;
         }
-        """
+        """.replace("PROBE_PROTO", probe_proto)
 
     def __get_zpool_config(self) -> float:
         """
