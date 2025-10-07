@@ -183,7 +183,7 @@ class SdDisk():
     @property
     def ino(self) -> int:
         return self.__ino
-                
+
     @property
     def is_rotational(self) -> bool:
         return self.__is_rotational
@@ -205,7 +205,7 @@ class SdDisk():
             _log_sddisk.error(repr(e))
             raise e
         return runtime_stat
-    
+
     @property
     def rpm_delay(self) -> int:
         delay_file = self.__dev_path + "/power/autosuspend_delay_ms"
@@ -500,7 +500,7 @@ class ZpoolRpmManager(metaclass=Singleton):
                 "Configuring autosuspend to spindown after "
                 "%d seconds idle time for all managed disks.",
                 self.__autosuspend_delay
-            ) 
+            )
             for pool, disks in self.__zpools.items():
                 for disk in disks:
                     try:
@@ -545,7 +545,7 @@ class ZpoolRpmManager(metaclass=Singleton):
             for disk in disks:
                 _log_zprpmmgr.debug(
                     "        disk: %s with inode: %d", disk.blk_dev, disk.ino)
-    
+
     def __handle_resume_event(self, ctx, data, size) -> None:
         resume_event = self.__eBee['resume_probe'].event(data)
         ino: int = resume_event.ino
@@ -645,7 +645,7 @@ class ZpoolRpmManager(metaclass=Singleton):
                 _log_zprpmmgr.error(
                     "Invalid type %s of 'noconfig' parameter.", type(noconfig))
                 _log_zprpmmgr.error("'noconfig' must be a boolean value.")
-                _log_zprpmmgr.error("Not updating 'noconfig' parameter")     
+                _log_zprpmmgr.error("Not updating 'noconfig' parameter")
         self.__last_config_update = self.__get_zpool_config()
         self.__config_rpm()
         self.__get_rpm_config()
@@ -902,7 +902,7 @@ if __name__ == "__main__":
             sys.exit(1)
         else:
             logger.info("Writing spin change report to file %s.", reportfile)
-        
+
         # Setup reporting.
         reporter = logging.getLogger('spinreport')
         reporter.setLevel(logging.INFO)
