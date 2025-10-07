@@ -343,68 +343,6 @@ class ZpoolRpmManager(metaclass=Singleton):
         - configure the Linux Runtime Power Management
     """
 
-    eBPF_resume_monitor = """
-    #include <linux/device.h>
-    #include <linux/kobject.h>
-    #include <linux/kernfs.h>
-
-    BPF_RINGBUF_OUTPUT(resume_probe, 1);
-    BPF_HASH(skip_map);
-
-    struct resume_event {
-        u64 ino;
-        u64 ts;
-    };
-
-    KFUNC_PROBE(sd_resume_runtime, struct device *dev)
-    {
-        u64 *do_skip;
-        u64 delta;
-        u64 ino = dev->kobj.sd->id;
-        u64 ts = bpf_ktime_get_ns();
-
-        do_skip = skip_map.lookup(&ino);
-        if (do_skip) {
-            delta = ts - *do_skip;
-            skip_map.delete(&ino);
-            if (delta < 10000000000) {
-                return 0;
-            }
-        }
-        struct resume_event *dev_info = resume_probe.ringbuf_reserve(
-            sizeof(struct resume_event));
-        if (!dev_info) {
-            return 0;
-        }
-        dev_info->ino = ino;
-        dev_info->ts = ts;
-        resume_probe.ringbuf_submit(dev_info, BPF_RB_FORCE_WAKEUP);
-        return 0;
-    }
-    """
-
-    eBPF_suspend_monitor = """
-    BPF_RINGBUF_OUTPUT(suspend_probe, 1);
-
-    struct suspend_event {
-        u64 ino;
-    };
-
-    KFUNC_PROBE(sd_suspend_runtime, struct device *dev)
-    {
-        u64 ino = dev->kobj.sd->id;
-
-        struct suspend_event *dev_info = suspend_probe.ringbuf_reserve(
-            sizeof(struct suspend_event));
-        if (!dev_info) {
-            return 0;
-        }
-        dev_info->ino = ino;
-        suspend_probe.ringbuf_submit(dev_info, BPF_RB_FORCE_WAKEUP);
-        return 0;
-    }
-    """
-
     # This is used to parse the 'zdb -C' output.
     pool_pattern = re.compile(r'(^[a-zA-Z].+?):')
     path_pattern = re.compile(r'^\s+path:\s\'(/dev/.+?)\'')
@@ -439,6 +377,70 @@ class ZpoolRpmManager(metaclass=Singleton):
         self.__config_rpm()
         self.__get_rpm_config()
         self.__eBee = None
+
+    def __get_eBPF_suspend_monitor(self) -> str:
+        return """
+        BPF_RINGBUF_OUTPUT(suspend_probe, 1);
+
+        struct suspend_event {
+            u64 ino;
+        };
+
+        KFUNC_PROBE(sd_suspend_runtime, struct device *dev)
+        {
+            u64 ino = dev->kobj.sd->id;
+
+            struct suspend_event *dev_info = suspend_probe.ringbuf_reserve(
+                sizeof(struct suspend_event));
+            if (!dev_info) {
+                return 0;
+            }
+            dev_info->ino = ino;
+            suspend_probe.ringbuf_submit(dev_info, BPF_RB_FORCE_WAKEUP);
+            return 0;
+        }
+        """
+
+    def __get_eBPF_resume_monitor(self) -> str:
+        return """
+        #include <linux/device.h>
+        #include <linux/kobject.h>
+        #include <linux/kernfs.h>
+
+        BPF_RINGBUF_OUTPUT(resume_probe, 1);
+        BPF_HASH(skip_map);
+
+        struct resume_event {
+            u64 ino;
+            u64 ts;
+        };
+
+        KFUNC_PROBE(sd_resume_runtime, struct device *dev)
+        {
+            u64 *do_skip;
+            u64 delta;
+            u64 ino = dev->kobj.sd->id;
+            u64 ts = bpf_ktime_get_ns();
+
+            do_skip = skip_map.lookup(&ino);
+            if (do_skip) {
+                delta = ts - *do_skip;
+                skip_map.delete(&ino);
+                if (delta < 10000000000) {
+                    return 0;
+                }
+            }
+            struct resume_event *dev_info = resume_probe.ringbuf_reserve(
+                sizeof(struct resume_event));
+            if (!dev_info) {
+                return 0;
+            }
+            dev_info->ino = ino;
+            dev_info->ts = ts;
+            resume_probe.ringbuf_submit(dev_info, BPF_RB_FORCE_WAKEUP);
+            return 0;
+        }
+        """
 
     def __get_zpool_config(self) -> float:
         """
@@ -689,8 +691,8 @@ class ZpoolRpmManager(metaclass=Singleton):
     def start_monitor(self) -> None:
         if self.__eBee == None:
             if self.__do_report:
-                eBPF_program = (ZpoolRpmManager.eBPF_resume_monitor +
-                                ZpoolRpmManager.eBPF_suspend_monitor)
+                eBPF_program = (self.__get_eBPF_resume_monitor() +
+                                self.__get_eBPF_suspend_monitor())
                 self.__eBee = BPF(text=eBPF_program)
                 self.__eBee['resume_probe'].open_ring_buffer(
                     self.__handle_resume_event
@@ -699,7 +701,7 @@ class ZpoolRpmManager(metaclass=Singleton):
                     self.__handle_suspend_event
                 )
             else:
-                eBPF_program = ZpoolRpmManager.eBPF_resume_monitor
+                eBPF_program = self.__get_eBPF_resume_monitor()
                 self.__eBee = BPF(text=eBPF_program)
                 self.__eBee['resume_probe'].open_ring_buffer(
                     self.__handle_resume_event
