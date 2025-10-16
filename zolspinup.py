@@ -750,7 +750,7 @@ if __name__ == "__main__":
     else:
         print(
             "Functionality for command {0} is not implemented."
-            .format(command_name), file=sys.stder
+            .format(command_name), file=sys.stderr
         )
         exit(1)
 
