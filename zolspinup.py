@@ -420,7 +420,7 @@ class ZpoolRpmManager(metaclass=Singleton):
         self.__last_wakeup: dict[str, int] = {}
         # The name of the file in sysfs controlling the runtime spindown
         # of disks was changed between kernel release 6.4 and 6.5.
-        major_release, minor_release = platform.uname().release.split('.')[0:2]
+        major_release, minor_release = re.split('[.-]', platform.uname().release)[0:2]
         if int(major_release) >= 6 and int(minor_release) >= 5:
             _log_zprpmmgr.info(
                 "Linux kernel version %s.%s, using "
